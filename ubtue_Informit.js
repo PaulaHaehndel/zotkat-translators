@@ -1,21 +1,21 @@
 {
-	"translatorID": "de2f3a0f-8b3f-47cd-a3ab-f0fdb1cb3c25",
-	"label": "Informit",
-	"creator": "Madeesh Kannan",
-	"target": "https?://search.informit.com.au/",
+	"translatorID": "c975515d-ab3c-4baa-b631-41b7e4239b42",
+	"label": "ubtue_Informit",
+	"creator": "Madeesh Kannan, Paula Hähndel",
+	"target": "https?://search.informit.",
 	"minVersion": "3.0",
 	"maxVersion": "",
 	"priority": 100,
-	"inRepository": false,
+	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2019-01-10 15:40:06"
+	"lastUpdated": "2023-08-23 12:12:18"
 }
 
 /*
 	***** BEGIN LICENSE BLOCK *****
 
-	Copyright © 2019 Universitätsbibliothek Tübingen.  All rights reserved.
+	Copyright © 2023 Universitätsbibliothek Tübingen.  All rights reserved.
 
 	This program is free software: you can redistribute it and/or modify
 	it under the terms of the GNU Affero General Public License as published by
@@ -35,18 +35,17 @@
 
 
 function detectWeb(doc, url) {
-    if (url.match(/\/browsePublication;/))
-        return "multiple";
-    else if (url.match(/\/documentSummary;/)) {
-        // placeholder, actual type determined by the embedded metadata translator
-        return "journalArticle";
-    }
+	if (url.includes("toc"))
+		return "multiple";
+	else if (url.includes("doi")) {
+		return "journalArticle";
+	}
 }
 
 function getSearchResults(doc) {
 	var items = {};
 	var found = false;
-	var rows = ZU.xpath(doc, "//div[@class='listing-detail']/p//a")
+	var rows = ZU.xpath(doc, '//div[@class="issue-item__title"]//a');
 	for (let i=0; i<rows.length; i++) {
 		let href = rows[i].href;
 		let title = ZU.trimInternal(rows[i].textContent);
@@ -65,29 +64,40 @@ function postProcess(doc, item) {
 			item.pages = pageMatch[1];
 	}
 
-    if (!item.DOI)
-        item.DOI = ZU.xpathText(doc, "//span[@class='list-item-type' and contains(text(), 'DOI:')][1]/following-sibling::span[1]/a");
+	let pubinfo = ZU.xpathText(doc, '//ul[@class="rlist publication-details__list"]');
 
-    if (!item.ISSN)
-        item.ISSN = ZU.xpathText(doc, "//span[@class='list-item-type' and contains(text(), 'ISSN:')][1]/following-sibling::span[1]");
+	if (!item.DOI)
+		item.DOI = ZU.xpathText(doc, "//span[@class='list-item-type' and contains(text(), 'DOI:')][1]/following-sibling::span[1]/a");
 
-    item.tags = ZU.xpath(doc, "//span[@class='list-item-type' and contains(text(), 'Subject:')][1]/following-sibling::span[1]//a")
-                     .map(i => i.textContent)
+	if (!item.ISSN)
+		item.ISSN = ZU.xpathText(doc, "//span[@class='list-item-type' and contains(text(), 'ISSN:')][1]/following-sibling::span[1]");
+	if (!item.ISSN) {
+		item.ISSN = pubinfo.match(/ISSN\s*:?\s*(\d{4}-\d{3}.)/)[1];
+	}
+	if (!item.volume) item.volume = pubinfo.match(/Vol[^\d]*(\d+)/)[1];
+	if (!item.issue) item.issue = pubinfo.match(/No[^\d]*(\d+)/)[1];
+
+	item.tags = ZU.xpath(doc, "//span[@class='list-item-type' and contains(text(), 'Subject:')][1]/following-sibling::span[1]//a")
+					 .map(i => i.textContent)
+	if (item.reportType == "book-review") {
+		item.tags.push("RezensionstagPica");
+	}
 }
 
 function invokeEmbeddedMetadataTranslator(doc, url) {
-    var translator = Zotero.loadTranslator("web");
-    translator.setTranslator("951c027d-74ac-47d4-a107-9c3069ab7b48");
-    translator.setDocument(doc);
-    translator.setHandler("itemDone", function (t, i) {
-        postProcess(doc, i);
-        i.complete();
-    });
-    translator.translate();
+	var translator = Zotero.loadTranslator("web");
+	translator.setTranslator("951c027d-74ac-47d4-a107-9c3069ab7b48");
+	translator.setDocument(doc);
+	translator.setHandler("itemDone", function (t, i) {
+		postProcess(doc, i);
+		i.attachments = [];
+		i.complete();
+	});
+	translator.translate();
 }
 
 function doWeb(doc, url) {
-    if (detectWeb(doc, url) === "multiple") {
+	if (detectWeb(doc, url) === "multiple") {
 		Zotero.selectItems(getSearchResults(doc), function (items) {
 			if (!items) {
 				return true;
@@ -98,6 +108,52 @@ function doWeb(doc, url) {
 			}
 			ZU.processDocuments(articles, invokeEmbeddedMetadataTranslator);
 		});
-    } else
-        invokeEmbeddedMetadataTranslator(doc, url);
+	} else
+		invokeEmbeddedMetadataTranslator(doc, url);
 }
+/** BEGIN TEST CASES **/
+var testCases = [
+	{
+		"type": "web",
+		"url": "https://search.informit.org/toc/l_acr/99/4",
+		"items": "multiple"
+	},
+	{
+		"type": "web",
+		"url": "https://search.informit.org/doi/10.3316/informit.815447686114521",
+		"items": [
+			{
+				"itemType": "journalArticle",
+				"title": "Then and now: Australian catholic experiences",
+				"creators": [
+					{
+						"firstName": "Richard",
+						"lastName": "Rymarz",
+						"creatorType": "author"
+					}
+				],
+				"date": "2022-10-01",
+				"ISSN": "0727-3215",
+				"abstractNote": "Review(s) of: Then and now: Australian catholic experiences, by Edmund Campion, (Adelaide: ATF Theology, 2021), pp. 178, paperback, $29.95.",
+				"archiveLocation": "Sydney",
+				"issue": "4",
+				"language": "EN",
+				"libraryCatalog": "search.informit.org",
+				"pages": "499-500",
+				"publicationTitle": "TheAustralasian Catholic Record",
+				"shortTitle": "Then and now",
+				"url": "https://search.informit.org/doi/abs/10.3316/informit.815447686114521",
+				"volume": "99",
+				"attachments": [],
+				"tags": [
+					{
+						"tag": "RezensionstagPica"
+					}
+				],
+				"notes": [],
+				"seeAlso": []
+			}
+		]
+	}
+]
+/** END TEST CASES **/
